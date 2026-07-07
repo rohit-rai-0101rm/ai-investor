@@ -62,11 +62,21 @@ async def chat(request: ChatRequest):
         # Explicit "no outside knowledge" instruction: smaller free models will
         # otherwise blend in memorized facts (e.g. citing an old annual report
         # that was never actually ingested) instead of admitting a gap.
+        # Also branches for meta/capability questions ("what can I do here?")
+        # separately from data questions - without this, the strict
+        # context-only rule made the model refuse to explain itself at all.
         prompt = (
-            "You are an expert financial analyst. Answer the user's question "
-            "using ONLY the context below, which was retrieved from the "
-            "company's actual ingested annual report.\n\n"
-            "Do NOT use any outside knowledge about this company, even if you "
+            "You are the AI assistant for an investor intelligence platform. "
+            "Users can ask you about financial data (revenue, net income, "
+            "risk factors, growth drivers, etc.) extracted from annual "
+            "reports they've uploaded, for any ingested company/year.\n\n"
+            "If the user's question is about what you or this app can do "
+            "in general (a greeting, capability question, or similar) rather "
+            "than a specific data question, briefly explain that in 1-2 "
+            "sentences without needing the context below.\n\n"
+            "Otherwise, answer using ONLY the context below, which was "
+            "retrieved from the company's actual ingested annual report. Do "
+            "NOT use any outside knowledge about this company, even if you "
             "recognize it, and do NOT cite any report, year, or page number "
             "that is not explicitly present in the context below - doing so "
             "is fabrication. If the context does not contain enough "
@@ -83,10 +93,14 @@ async def chat(request: ChatRequest):
         # )
 
         # ===== FREE ALTERNATIVE (Groq model name) =====
+        # temperature=0: makes answers consistent run-to-run for identical
+        # questions - the default sampling was giving noticeably different
+        # completeness on repeated identical queries.
         client = get_openai_client()
         response = client.chat.completions.create(
             model=os.getenv("GROQ_CHAT_MODEL", "llama-3.1-8b-instant"),
-            messages=[{"role": "user", "content": prompt}]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0
         )
         answer = response.choices[0].message.content
         return {"answer": answer}

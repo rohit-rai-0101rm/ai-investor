@@ -149,17 +149,21 @@ def get_structured_completion(
 
     # Groq doesn't support OpenAI's `.beta.chat.completions.parse()` structured
     # outputs API, so go straight for JSON mode and parse with pydantic.
+    # temperature=0: extraction should be consistent for the same document,
+    # not vary between runs the way creative/conversational output would.
     try:
         response = client.chat.completions.create(
             model=model,
             messages=messages,
-            response_format={"type": "json_object"}
+            response_format={"type": "json_object"},
+            temperature=0
         )
     except openai.BadRequestError:
         # Some models don't support JSON mode either; fall back to plain completion.
         response = client.chat.completions.create(
             model=model,
-            messages=messages
+            messages=messages,
+            temperature=0
         )
 
     text = response.choices[0].message.content
