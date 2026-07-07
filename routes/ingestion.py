@@ -27,41 +27,45 @@ async def upload_document(
 
     file_path = upload_dir / file.filename
 
+    # Pre-existing bug (from the original tutorial code, unrelated to the
+    # Azure->free swap): ingestion used to run INSIDE this `with` block,
+    # reading the file while its write handle was still open and unflushed -
+    # pymupdf would see a zero-byte file. Writing must fully close first.
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(
             file.file,
             buffer
         )
 
-        # ===== OLD CODE (Azure OpenAI Embeddings + Azure AI Search) =====
-        # embeddings = AzureOpenAIEmbeddings(
-        #     model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
-        #     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        #     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-        #     api_version=os.getenv("AZURE_OPENAI_API_VERSION")
-        # )
-        #
-        # vector_store = AzureAISearchVectorStore(
-        #     endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
-        #     api_key=os.getenv("AZURE_SEARCH_API_KEY"),
-        #     index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
-        # )
+    # ===== OLD CODE (Azure OpenAI Embeddings + Azure AI Search) =====
+    # embeddings = AzureOpenAIEmbeddings(
+    #     model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
+    #     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    #     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    #     api_version=os.getenv("AZURE_OPENAI_API_VERSION")
+    # )
+    #
+    # vector_store = AzureAISearchVectorStore(
+    #     endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
+    #     api_key=os.getenv("AZURE_SEARCH_API_KEY"),
+    #     index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
+    # )
 
-        # ===== FREE ALTERNATIVE (local HuggingFace embeddings + Chroma) =====
-        embeddings = HuggingFaceEmbeddings(
-            model_name="sentence-transformers/all-MiniLM-L6-v2"
-        )
+    # ===== FREE ALTERNATIVE (local HuggingFace embeddings + Chroma) =====
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
+    )
 
-        vector_store = ChromaVectorStore(
-            persist_dir=os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"),
-            collection_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
-        )
+    vector_store = ChromaVectorStore(
+        persist_dir=os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"),
+        collection_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
+    )
 
-        ingest_document(
-            pdf_path=str(file_path),
-            embeddings=embeddings,
-            vector_store=vector_store
-        )
+    ingest_document(
+        pdf_path=str(file_path),
+        embeddings=embeddings,
+        vector_store=vector_store
+    )
 
     return {
         "message": "Document uploaded successfully",
