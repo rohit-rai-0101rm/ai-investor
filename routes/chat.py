@@ -59,7 +59,21 @@ async def chat(request: ChatRequest):
         context = "\n\n".join(doc.page_content[:max_chars_per_chunk] for doc in docs)
 
         # Build chat prompt – include retrieved context and the user question
-        prompt = f"You are an expert financial analyst. Use the following context from corporate reports to answer the user's question. If the context does not contain relevant information, politely indicate that you do not have enough data.\n\nContext:\n{context}\n\nUser Question: {request.question}\n\nAnswer:"
+        # Explicit "no outside knowledge" instruction: smaller free models will
+        # otherwise blend in memorized facts (e.g. citing an old annual report
+        # that was never actually ingested) instead of admitting a gap.
+        prompt = (
+            "You are an expert financial analyst. Answer the user's question "
+            "using ONLY the context below, which was retrieved from the "
+            "company's actual ingested annual report.\n\n"
+            "Do NOT use any outside knowledge about this company, even if you "
+            "recognize it, and do NOT cite any report, year, or page number "
+            "that is not explicitly present in the context below - doing so "
+            "is fabrication. If the context does not contain enough "
+            "information to answer, say so plainly instead of guessing.\n\n"
+            f"Context:\n{context}\n\n"
+            f"User Question: {request.question}\n\nAnswer:"
+        )
 
         # ===== OLD CODE (Azure OpenAI deployment name) =====
         # client = get_openai_client()
