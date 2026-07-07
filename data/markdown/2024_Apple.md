@@ -14,8 +14,6 @@ or
 
 For the transition period from to             . Commission File Number: **001-36743** 
 
-**==> picture [25 x 31] intentionally omitted <==**
-
 ## **Apple Inc.** 
 
 (Exact name of Registrant as specified in its charter) 
@@ -253,9 +251,7 @@ Apple Inc. | 2024 Form 10-K | 19
 
 The following graph shows a comparison of five-year cumulative total shareholder return, calculated on a dividend-reinvested basis, for the Company, the S&P 500 Index and the Dow Jones U.S. Technology Supersector Index. The graph assumes $100 was invested in each of the Company’s common stock, the S&P 500 Index and the Dow Jones U.S. Technology Supersector Index as of the market close on September 27, 2019. Past stock price performance is not necessarily indicative of future stock price performance. 
 
-**==> picture [460 x 305] intentionally omitted <==**
-
-**==> picture [576 x 50] intentionally omitted <==**
+**==> picture [574 x 49] intentionally omitted <==**
 
 **----- Start of picture text -----**<br>
 September September September September September September<br>2019 2020 2021 2022 2023 2024<br>Apple Inc. $ 100  $ 207  $ 273  $ 281  $ 322  $ 430<br>S&P 500 Index $ 100  $ 113  $ 156  $ 131  $ 155  $ 210<br>Dow Jones U.S. Technology Supersector Index $ 100  $ 146  $ 216  $ 156  $ 215  $ 322<br>**----- End of picture text -----**<br>

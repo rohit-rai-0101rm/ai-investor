@@ -42,6 +42,9 @@ dist/
 # IDEs
 .idea/
 
+# Claude Code local config
+.claude/
+
 # Python bytecode
 *.pyc
 

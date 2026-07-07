@@ -21,16 +21,26 @@ def get_engine(database: str | None = None):
     host = os.getenv("POSTGRES_HOST")
     port = os.getenv("POSTGRES_PORT")
     user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
+    password = os.getenv("POSTGRES_PASSWORD", "")
 
     # URL-encode credentials to handle special characters (e.g., @ in password)
     encoded_user = quote(user, safe="")
     encoded_password = quote(password, safe="")
 
+    # ===== OLD CODE (Azure PostgreSQL always requires SSL) =====
+    # connection_string = (
+    #     f"postgresql+psycopg2://"
+    #     f"{encoded_user}:{encoded_password}@{host}:{port}/{database}"
+    #     "?sslmode=require"
+    # )
+
+    # ===== FREE ALTERNATIVE (local Postgres has no SSL; "prefer" works for both
+    # local dev and SSL-requiring free-tier hosts like Neon/Supabase) =====
+    sslmode = os.getenv("POSTGRES_SSLMODE", "prefer")
     connection_string = (
         f"postgresql+psycopg2://"
         f"{encoded_user}:{encoded_password}@{host}:{port}/{database}"
-        "?sslmode=require"
+        f"?sslmode={sslmode}"
     )
 
     return create_engine(connection_string)
@@ -46,17 +56,27 @@ def create_database() -> None:
     host = os.getenv("POSTGRES_HOST")
     port = os.getenv("POSTGRES_PORT")
     user = os.getenv("POSTGRES_USER")
-    password = os.getenv("POSTGRES_PASSWORD")
-    
+    password = os.getenv("POSTGRES_PASSWORD", "")
+
     try:
-        # Connect to default 'postgres' database using psycopg2 directly
+        # ===== OLD CODE (Azure PostgreSQL always requires SSL) =====
+        # conn = psycopg2.connect(
+        #     host=host,
+        #     port=port,
+        #     database="postgres",
+        #     user=user,
+        #     password=password,
+        #     sslmode="require"
+        # )
+
+        # ===== FREE ALTERNATIVE (local Postgres has no SSL) =====
         conn = psycopg2.connect(
             host=host,
             port=port,
             database="postgres",
             user=user,
             password=password,
-            sslmode="require"
+            sslmode=os.getenv("POSTGRES_SSLMODE", "prefer")
         )
         # Enable autocommit mode before executing CREATE DATABASE
         conn.autocommit = True

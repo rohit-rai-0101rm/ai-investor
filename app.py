@@ -26,12 +26,21 @@ def startup_event():
     """
     create_database()
     create_tables()
-    
+
+    # ===== OLD CODE (Azure AI Search) =====
+    # try:
+    #     create_index(
+    #         endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
+    #         api_key=os.getenv("AZURE_SEARCH_API_KEY"),
+    #         index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
+    #     )
+    # except Exception as e:
+    #     print(f"Warning: Could not create vector index: {e}")
+
+    # ===== FREE ALTERNATIVE (ChromaDB collection, no endpoint/key needed) =====
     try:
         create_index(
-            endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
-            api_key=os.getenv("AZURE_SEARCH_API_KEY"),
-            index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
+            index_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
         )
     except Exception as e:
         print(f"Warning: Could not create vector index: {e}")

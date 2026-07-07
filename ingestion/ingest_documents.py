@@ -1,12 +1,18 @@
+# ===== OLD CODE (Azure OpenAI Embeddings + Azure AI Search) =====
+# from langchain_openai import AzureOpenAIEmbeddings
+# from vectorstore.azure_ai_search import AzureAISearchVectorStore
+# from vectorstore.azure_ai_search import Retriever
+
+# ===== FREE ALTERNATIVE (local HuggingFace embeddings + Chroma) =====
 import os
 from pathlib import Path
 
 from dotenv import load_dotenv
-from langchain_openai import AzureOpenAIEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 
 from ingestion.pdf_to_markdown import PDFToMarkdownConverter
 from ingestion.semantic_chunker import chunk_markdown
-from vectorstore.azure_ai_search import AzureAISearchVectorStore
+from vectorstore.azure_ai_search import ChromaVectorStore
 from rag.kpi_extractor_rag import extract_financial_metrics
 from database.save_metrics import save_metrics
 from vectorstore.azure_ai_search import Retriever
@@ -70,9 +76,16 @@ def ingest_document(
         source_file=pdf_file.name
     )
 
-    # Extract financial metrics using the newly ingested data
+    # ===== OLD CODE (Azure AI Search retriever) =====
+    # metrics = extract_financial_metrics(
+    #     retriever=Retriever(vector_store.client),
+    #     company=company,
+    #     year=int(year) if year.isdigit() else None
+    # )
+
+    # ===== FREE ALTERNATIVE (Chroma retriever needs the embeddings model too) =====
     metrics = extract_financial_metrics(
-        retriever=Retriever(vector_store.client),
+        retriever=Retriever(vector_store.collection, embeddings),
         company=company,
         year=int(year) if year.isdigit() else None
     )
@@ -86,17 +99,28 @@ def ingest_directory(input_dir: str) -> None:
     """
     Ingest all PDFs from a directory.
     """
-    embeddings = AzureOpenAIEmbeddings(
-        model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
-        azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-        api_key=os.getenv("AZURE_OPENAI_API_KEY"),
-        api_version=os.getenv("AZURE_OPENAI_API_VERSION")
+    # ===== OLD CODE (Azure OpenAI Embeddings + Azure AI Search) =====
+    # embeddings = AzureOpenAIEmbeddings(
+    #     model=os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT"),
+    #     azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+    #     api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+    #     api_version=os.getenv("AZURE_OPENAI_API_VERSION")
+    # )
+    #
+    # vector_store = AzureAISearchVectorStore(
+    #     endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
+    #     api_key=os.getenv("AZURE_SEARCH_API_KEY"),
+    #     index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
+    # )
+
+    # ===== FREE ALTERNATIVE (local HuggingFace embeddings + Chroma) =====
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
-    vector_store = AzureAISearchVectorStore(
-        endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
-        api_key=os.getenv("AZURE_SEARCH_API_KEY"),
-        index_name=os.getenv("AZURE_SEARCH_INDEX_NAME")
+    vector_store = ChromaVectorStore(
+        persist_dir=os.getenv("CHROMA_PERSIST_DIR", "./data/chroma"),
+        collection_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
     )
 
     pdf_files = list(Path(input_dir).glob("*.pdf"))

@@ -1,4 +1,12 @@
-**==> picture [502 x 613] intentionally omitted <==**
+**==> picture [355 x 274] intentionally omitted <==**
+
+**----- Start of picture text -----**<br>
+— -<br>;<br>a<br>es |<br>oe ~<br>»<br>=<br>+<br>Sine = ~\\<br>**----- End of picture text -----**<br>
+
+
+m= Microsoft 
+
+Annual Report 2024 
 
 Dear shareholders, colleagues, customers, and partners: 
 
@@ -206,8 +214,6 @@ It is why we are investing in our fundamentals, in our people, and in continued 
 
 It is not an exaggeration to say that what each of us does right now with the unique opportunity we have been given will shape the future. And I look forward to seeing how all of us use Microsoft as a platform to make a difference—one customer, one community, one country at a time. 
 
-**==> picture [93 x 42] intentionally omitted <==**
-
 Satya Nadella Chairman and Chief Executive Officer October 18, 2024 
 
 7 
@@ -260,8 +266,6 @@ The dividend declared on June 12, 2024 was included in other current liabilities
 ## **COMPARISON OF 5 YEAR CUMULATIVE TOTAL RETURN*** 
 
 Among Microsoft Corporation, the S&P 500 Index and the NASDAQ Computer Index 
-
-**==> picture [426 x 323] intentionally omitted <==**
 
 ||**6/19**|**6/20**|**6/21**|**6/22**|**6/23**|**6/24**|
 |---|---|---|---|---|---|---|

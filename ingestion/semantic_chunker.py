@@ -45,24 +45,32 @@ def chunk_markdown(
     return splitter.create_documents([markdown_content])
 
 if __name__ == "__main__":
-    import os
-    from langchain_openai import AzureOpenAIEmbeddings
+    # ===== OLD CODE (Azure OpenAI Embeddings) =====
+    # import os
+    # from langchain_openai import AzureOpenAIEmbeddings
+    #
+    # endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    # api_key = os.getenv("AZURE_OPENAI_API_KEY")
+    # api_version = os.getenv("AZURE_OPENAI_API_EMBEDDING_VERSION", "2023-05-15")
+    # embedding_model = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    #
+    # if not endpoint or not api_key:
+    #     raise RuntimeError(
+    #         "Missing Azure OpenAI credentials. Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in .env."
+    #     )
+    #
+    # embeddings = AzureOpenAIEmbeddings(
+    #     model = "text-embedding-ada-002",
+    #     azure_endpoint=endpoint,
+    #     api_key=api_key,
+    #     api_version=api_version
+    # )
 
-    endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-    api_key = os.getenv("AZURE_OPENAI_API_KEY")
-    api_version = os.getenv("AZURE_OPENAI_API_EMBEDDING_VERSION", "2023-05-15")
-    embedding_model = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT")
+    # ===== FREE ALTERNATIVE (local HuggingFace embeddings, no API key needed) =====
+    from langchain_huggingface import HuggingFaceEmbeddings
 
-    if not endpoint or not api_key:
-        raise RuntimeError(
-            "Missing Azure OpenAI credentials. Set AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY in .env."
-        )
-
-    embeddings = AzureOpenAIEmbeddings(
-        model = "text-embedding-ada-002",
-        azure_endpoint=endpoint,
-        api_key=api_key,
-        api_version=api_version
+    embeddings = HuggingFaceEmbeddings(
+        model_name="sentence-transformers/all-MiniLM-L6-v2"
     )
 
     markdown_file = "../data/markdown/2024_Apple.md"

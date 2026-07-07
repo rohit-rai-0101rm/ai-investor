@@ -6,10 +6,15 @@ python-dotenv==1.1.1
 openai==2.41.0
 sqlalchemy==2.0.50
 psycopg2-binary==2.9.10
-azure-core==1.35.1
-azure-search-documents==11.5.3
+# ===== OLD (Azure OpenAI Embeddings + Azure AI Search) =====
+# azure-core==1.35.1
+# azure-search-documents==11.5.3
+# langchain-openai==1.2.2
+# ===== FREE ALTERNATIVE (local embeddings + Chroma) =====
+chromadb==0.5.23
+langchain-huggingface==1.2.2
+sentence-transformers==3.3.1
 langchain-core==1.4.0
-langchain-openai==1.2.2
 langchain-experimental==0.4.2
 pymupdf4llm==1.27.2.3
 python-multipart==0.0.32
