@@ -1,3 +1,13 @@
+---
+title: Ai Investor
+emoji: 🐢
+colorFrom: red
+colorTo: gray
+sdk: docker
+pinned: false
+short_description: AI-powered investor intelligence platform — RAG-based
+---
+
 # AI-Powered Investor Intelligence Platform
 
 <img width="1906" height="945" alt="RAGproject" src="https://github.com/user-attachments/assets/5024af81-e07e-47ed-a4ab-a40c439522f2" />
