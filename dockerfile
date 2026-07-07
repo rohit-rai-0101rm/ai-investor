@@ -26,9 +26,10 @@ RUN uv pip install --system -r requirements.txt
 COPY . /app
 
 # Expose the port the app will run on
-EXPOSE 8000
+EXPOSE 7860
 
 # ===== FREE ALTERNATIVE ADDITION =====
-# Read $PORT from the environment (Render injects its own; Hugging Face
-# Spaces defaults to 7860) and fall back to 8000 for local `docker run`.
-CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Read $PORT from the environment so this same image works on Render (which
+# injects its own $PORT) - defaulting to 7860 since Hugging Face Spaces
+# hardcodes that port and doesn't set $PORT itself.
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-7860}"]
