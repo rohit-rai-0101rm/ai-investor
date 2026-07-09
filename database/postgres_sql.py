@@ -4,20 +4,36 @@ from urllib.parse import quote
 import psycopg2
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine
 
 load_dotenv()
+
+# ===== MONITORING & OBSERVABILITY (Phase 1 fix) =====
+# Keyed by database name (get_engine supports overriding it) rather than a
+# single bare global, so the multi-database parameter still works correctly -
+# in practice this app only ever uses one database, so this dict holds at
+# most one entry. Same singleton pattern as the embeddings/vector store fix
+# in routes/chat.py: SQLAlchemy Engines are meant to be created once and
+# reused (they own a connection pool internally) - the old code called
+# create_engine() fresh on every get_engine() call, paying a full fresh
+# TCP+TLS+auth handshake to Neon on every single query (~5.5s, confirmed by
+# direct measurement) instead of reusing an already-open pooled connection.
+_engines: dict[str, Engine] = {}
 
 
 def get_engine(database: str | None = None):
     """
-    Create PostgreSQL connection.
-    
+    Get (or lazily create) a cached PostgreSQL engine.
+
     Args:
         database: Database name. Defaults to POSTGRES_DATABASE from .env.
     """
     if database is None:
         database = os.getenv("POSTGRES_DATABASE")
-    
+
+    if database in _engines:
+        return _engines[database]
+
     host = os.getenv("POSTGRES_HOST")
     port = os.getenv("POSTGRES_PORT")
     user = os.getenv("POSTGRES_USER")
@@ -43,7 +59,9 @@ def get_engine(database: str | None = None):
         f"?sslmode={sslmode}"
     )
 
-    return create_engine(connection_string)
+    engine = create_engine(connection_string)
+    _engines[database] = engine
+    return engine
 
 
 def create_database() -> None:

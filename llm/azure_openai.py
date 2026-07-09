@@ -43,7 +43,7 @@ def get_structured_completion(
     prompt: str,
     response_model: type[BaseModel],
     model: str | None = None
-) -> BaseModel:
+) -> tuple[BaseModel, object]:
     """
     Generate structured output.
 
@@ -53,7 +53,11 @@ def get_structured_completion(
         model: Groq model name.
 
     Returns:
-        Parsed response model.
+        Tuple of (parsed response model, usage object with .prompt_tokens /
+        .completion_tokens). Returning usage alongside the parsed model - not
+        just the model - is what lets the caller record cost/token metrics
+        (see rag/kpi_extractor_rag.py) without this function needing to know
+        anything about observability itself.
     """
     # ===== OLD CODE (Azure OpenAI) =====
     # # Read deployment name from environment when not provided; do not fallback to a hardcoded name
@@ -176,9 +180,9 @@ def get_structured_completion(
     try:
         # Handle explicit 'null' responses: return an empty model instance
         if isinstance(json_text, str) and json_text.strip() in ("null", "None", ""):
-            return response_model.model_construct()
+            return response_model.model_construct(), response.usage
 
         parsed = response_model.model_validate_json(json_text)
-        return parsed
+        return parsed, response.usage
     except Exception as e:
         raise RuntimeError(f"Failed to parse JSON response: {e}\nRaw output:\n{text}") from e

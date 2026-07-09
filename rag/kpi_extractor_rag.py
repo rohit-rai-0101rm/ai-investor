@@ -48,6 +48,8 @@
 
 # ===== FREE ALTERNATIVE (reuse the single Chroma-backed Retriever) =====
 import os
+import time
+import uuid
 from types import SimpleNamespace
 
 from dotenv import load_dotenv
@@ -55,6 +57,9 @@ from pydantic import BaseModel, ConfigDict, field_validator, Field
 
 from llm.azure_openai import get_structured_completion
 from vectorstore.azure_ai_search import ChromaVectorStore, Retriever
+
+# ===== MONITORING & OBSERVABILITY (Phase 1: latency + cost tracking) =====
+from observability.metrics import time_stage, record_metric, estimate_cost_usd
 
 load_dotenv()
 
@@ -197,11 +202,25 @@ def extract_financial_metrics(
     """
     Extract KPIs using RAG.
     """
-    context = retrieve_context(
-        retriever=retriever,
-        company=company,
-        year=year
-    )
+    # ===== MONITORING & OBSERVABILITY (Phase 1) =====
+    # Same request_id/stage pattern as routes/chat.py's chat(), so retrieval,
+    # llm_call and total stages line up in request_metrics regardless of which
+    # endpoint produced them. No BackgroundTasks here - this doesn't run
+    # inside a request handler that has one (routes/ingestion.py calls this
+    # synchronously), and it doesn't need to: upload already takes ~2 minutes
+    # end to end (OCR + chunking dominate), so a couple of ~850ms synchronous
+    # metric writes are noise by comparison, unlike the chat endpoint where
+    # they were most of the perceived latency.
+    request_id = str(uuid.uuid4())
+    endpoint = "/api/upload"
+    request_start = time.perf_counter()
+
+    with time_stage(request_id, endpoint, "retrieval", company=company, year=year):
+        context = retrieve_context(
+            retriever=retriever,
+            company=company,
+            year=year
+        )
 
     prompt = build_extraction_prompt(
         company=company,
@@ -209,9 +228,38 @@ def extract_financial_metrics(
         context=context
     )
 
-    metrics = get_structured_completion(
+    # Timed manually rather than via time_stage(): token usage/cost is only
+    # known from `usage` after the call returns, same reasoning as the
+    # llm_call stage in routes/chat.py.
+    llm_start = time.perf_counter()
+    metrics, usage = get_structured_completion(
         prompt=prompt,
         response_model=FinancialMetrics
+    )
+    llm_duration_ms = (time.perf_counter() - llm_start) * 1000
+
+    model = os.getenv("GROQ_CHAT_MODEL", "llama-3.1-8b-instant")
+    cost_usd = estimate_cost_usd(model, usage.prompt_tokens, usage.completion_tokens)
+
+    record_metric(
+        request_id=request_id,
+        endpoint=endpoint,
+        stage="llm_call",
+        duration_ms=llm_duration_ms,
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        cost_usd=cost_usd,
+        company=company,
+        year=year
+    )
+
+    record_metric(
+        request_id=request_id,
+        endpoint=endpoint,
+        stage="total",
+        duration_ms=(time.perf_counter() - request_start) * 1000,
+        company=company,
+        year=year
     )
 
     return metrics.model_dump()
