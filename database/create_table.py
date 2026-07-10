@@ -64,6 +64,43 @@ def create_tables() -> None:
 
     print("request_metrics table created.")
 
+    # ===== MONITORING & OBSERVABILITY (Phase 3: quality/eval harness) =====
+    # One row per (run, question) rather than one summary row per run - same
+    # reasoning as request_metrics being per-stage: a summary alone can't tell
+    # you *which* question started failing when quality regresses, only that
+    # something did. run_id ties every question in one eval invocation
+    # together; git_sha is what makes "quality trend over time" actually
+    # mean something (can plot pass-rate against commit history, not just a
+    # bare timestamp).
+    eval_query = """
+    CREATE TABLE IF NOT EXISTS eval_results (
+        id SERIAL PRIMARY KEY,
+        run_id VARCHAR(36) NOT NULL,
+        git_sha VARCHAR(40),
+        question TEXT NOT NULL,
+        company VARCHAR(100),
+        year VARCHAR(10),
+        question_type VARCHAR(20) NOT NULL,
+        answer TEXT,
+        keyword_pass BOOLEAN,
+        grounded BOOLEAN,
+        judge_reason TEXT,
+        passed BOOLEAN NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    """
+
+    eval_index_query = """
+    CREATE INDEX IF NOT EXISTS idx_eval_results_run_created
+    ON eval_results (run_id, created_at);
+    """
+
+    with engine.begin() as connection:
+        connection.execute(text(eval_query))
+        connection.execute(text(eval_index_query))
+
+    print("eval_results table created.")
+
 
 if __name__ == "__main__":
     create_database()

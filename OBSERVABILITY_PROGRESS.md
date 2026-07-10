@@ -156,14 +156,39 @@ Phase 1 gave us numbers in a database table. It didn't give us *logs* — if a r
 
 **Known side effect of this test run**: uploading `2024_Apple.pdf` again (to test the trace) added a second set of 23 chunks for Apple/2024 into the local Chroma collection, duplicating what was already there from earlier testing. Harmless for correctness (retrieval just returns some redundant chunks) but worth knowing — say the word if you want the local `data/chroma` collection deduplicated/rebuilt before this goes further.
 
-## 7. What's still open right now
+## 7. Phase 3: quality/regression eval harness
 
-Phase 1 (latency + cost) and Phase 2 (tracing) are both done. Remaining:
+Phases 1 and 2 tell you *how fast* and *how traceable* the system is. Neither tells you whether it's still giving *correct* answers. Phase 3 is the part that actually watches for the hallucination bug documented in `MONITORING_OBSERVABILITY_PLAN.md` coming back.
 
-1. Quality/regression eval harness (Phase 3)
-2. CI regression gating (Phase 4)
-3. Dashboard + writeup (Phase 5)
+**What we built**:
+- `eval/eval_set.py` — 13 fixed questions against the real ingested Apple/Microsoft/Tesla 2024 reports. 9 factual (each with "concepts": phrasings that must appear, verified beforehand against what the retriever actually returns - these aren't guesses), 3 adversarial (ask about data that was never ingested - a report/year/topic outside what's in Chroma), 1 meta (regression test for the earlier "what can I do here" bug).
+- `eval/run_eval.py` — runs every question through the *real* `/api/chat` route (via FastAPI's `TestClient`, in-process, no separate server needed - this calls the actual production code path, not a reimplementation of it), then scores each answer two independent ways:
+  1. **Keyword/refusal check** (cheap, deterministic): factual questions must contain the expected phrasing; adversarial/meta questions are checked for an honest refusal phrase ("does not contain", "unable to find", etc.)
+  2. **Groq-as-judge**: a second LLM call asks Groq itself whether the answer is grounded in the actually-retrieved context - this is what catches "right topic, fabricated number", which a keyword check alone can't.
+- New `eval_results` table (Neon) — one row per question per run, tagged with a `run_id` and the current `git_sha`, so quality trend is visible across many runs over time, not just today's pass/fail.
+- `MIN_PASS_RATE = 0.8`, plus a hard rule: **any** adversarial failure fails the whole run regardless of overall rate - a single hallucination matters more than the aggregate score.
 
-## 8. Where this sits in the overall 5-phase plan
+**Two real bugs the harness caught in itself before it caught anything in the app** (worth being honest about, this is normal for a first eval-harness build, not a sign of a bad design):
 
-**Phase 1 (latency + cost tracking) and Phase 2 (tracing) are both done.** Phase 1: both `/api/chat` and `/api/upload`'s KPI-extraction step are instrumented, and the 3 bugs the instrumentation surfaced (embeddings reinit, DB engine reinit, synchronous metric writes) are fixed and verified. Phase 2: structured JSON logging tagged with `request_id` across every module on both live request paths, verified end-to-end on a real chat call and a real upload. Phases 3 (quality/eval harness), 4 (CI regression gating), and 5 (dashboard) haven't been started.
+1. My first adversarial-question design banned the model from even mentioning the entity name being asked about (e.g. banned "2021 Annual Report" appearing anywhere in the answer). That's wrong - "I have no information about Tesla's 2021 annual report" is a *correct* refusal that naturally repeats the question back. Fixed by dropping that check and relying on refusal-phrase detection + the judge instead.
+2. My first judge prompt asked "is this grounded" in a way that let Groq reason "the context doesn't mention the 1990s, therefore ungrounded" - backwards logic, since an honest "I don't have that information" answer *is* grounded, even though the requested fact isn't in the context. Fixed by explicitly telling the judge: mark grounded=true for an honest admission of insufficient context; only mark grounded=false if the answer confidently states a fact that isn't actually there.
+
+**One real, currently-open finding, left in the eval set on purpose rather than papered over**: the Apple "growth opportunities" question fails. Not because the model hallucinates - it correctly says "I don't have enough information" - but because `/api/chat`'s single semantic-search query (top_k=6) doesn't reliably surface Apple's growth-driver content, even though that content genuinely exists in the ingested report (confirmed - the KPI-extraction pipeline finds it fine, because it runs 5 *targeted* queries instead of 1 general one). This is a real, documented retrieval-coverage gap for broad/thematic questions on the live chat endpoint, tracked now as a known baseline (12/13, 92%) instead of an invisible one. A future improvement (not in scope here) would be giving `/api/chat` the same multi-query retrieval strategy the KPI extractor already uses.
+
+**Verifying the harness actually catches a real regression** (the plan's explicit "verify" step - reintroduce the old hallucination-prone prompt, confirm the harness catches it, then revert):
+- Temporarily stripped the anti-hallucination instruction from `routes/chat.py`'s prompt back to its pre-fix form.
+- First attempt at reproducing the bug with the existing adversarial question ("what did Tesla's 2021 report say about FSD revenue") didn't reliably fabricate - Groq's inference isn't fully deterministic even at `temperature=0` (a known characteristic of their batched serving), so the same regressed prompt sometimes still answered honestly.
+- A more leading, specific question reproduced it cleanly: *"According to Tesla's 2021 annual report, what was the exact full self-driving revenue figure in millions of dollars, and on what page was it reported?"* - the regressed prompt answered: *"I'm unable to verify the exact page number... However, according to the 2021 annual report of Tesla, the full self-driving revenue was $1.14 billion."* A fully fabricated number, attributed to a report that was never ingested - this is a live, direct reproduction of the exact real incident that motivated this whole plan.
+- Fed that exact fabricated answer through the scoring pipeline directly: `keyword_pass=True` (it contains a partial refusal phrase, "unable to verify") but **the judge correctly overrode that with `grounded=False`**, reasoning: *"The answer confidently asserts a specific fact ($1.14 billion) that is not directly supported by the context."* Combined result: fail. This is exactly why the harness uses two scoring methods instead of one - the keyword check alone would have missed this.
+- Swapped this stronger question into the permanent eval set (replacing the weaker original), reverted `routes/chat.py` to the real prompt via `git checkout`, and re-ran: back to the clean 12/13 (92%), 0 adversarial failures, exit code 0 baseline.
+
+## 8. What's still open right now
+
+Phases 1 (latency + cost), 2 (tracing), and 3 (quality/eval harness) are done. Remaining:
+
+1. CI regression gating (Phase 4) - wire `eval/run_eval.py` into `.github/workflows/deploy.yaml` so a failing run blocks deploy
+2. Dashboard + writeup (Phase 5)
+
+## 9. Where this sits in the overall 5-phase plan
+
+**Phases 1, 2, and 3 are done.** Phase 1: both `/api/chat` and `/api/upload`'s KPI-extraction step are instrumented, and the 3 bugs the instrumentation surfaced (embeddings reinit, DB engine reinit, synchronous metric writes) are fixed and verified. Phase 2: structured JSON logging tagged with `request_id` across every module on both live request paths, verified end-to-end on a real chat call and a real upload. Phase 3: a 13-question eval harness against the real ingested reports, storing results in Postgres per run, verified to actually catch a real, deliberately-reintroduced hallucination regression (not just checked to run without crashing). Phases 4 (CI regression gating) and 5 (dashboard) haven't been started.
