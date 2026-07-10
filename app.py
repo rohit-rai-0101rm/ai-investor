@@ -12,7 +12,15 @@ from vectorstore.create_index import create_index
 from routes.ingestion import router as ingestion_router
 from routes.chat import router as chat_router
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+# Configured once here, before any route module's logger is used, so every
+# print()-replacement across the app (chat, ingestion, kpi extraction, vector
+# store) emits through the same JSON-formatted stdout handler.
+from observability.logging_config import configure_logging, get_logger
+
 load_dotenv()
+configure_logging()
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="AI-Powered Investor Intelligence Platform"
@@ -43,7 +51,7 @@ def startup_event():
             index_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
         )
     except Exception as e:
-        print(f"Warning: Could not create vector index: {e}")
+        logger.warning(f"Could not create vector index: {e}")
 
 app.include_router(
     ingestion_router,

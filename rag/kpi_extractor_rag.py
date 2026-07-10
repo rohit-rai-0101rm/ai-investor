@@ -197,12 +197,13 @@ Instructions:
 def extract_financial_metrics(
     retriever: Retriever,
     company: str,
-    year: int
+    year: int,
+    request_id: str | None = None
 ) -> dict:
     """
     Extract KPIs using RAG.
     """
-    # ===== MONITORING & OBSERVABILITY (Phase 1) =====
+    # ===== MONITORING & OBSERVABILITY (Phase 1 + Phase 2) =====
     # Same request_id/stage pattern as routes/chat.py's chat(), so retrieval,
     # llm_call and total stages line up in request_metrics regardless of which
     # endpoint produced them. No BackgroundTasks here - this doesn't run
@@ -211,7 +212,13 @@ def extract_financial_metrics(
     # end to end (OCR + chunking dominate), so a couple of ~850ms synchronous
     # metric writes are noise by comparison, unlike the chat endpoint where
     # they were most of the perceived latency.
-    request_id = str(uuid.uuid4())
+    #
+    # request_id defaults to a fresh one (rather than being required) so this
+    # function still works when called directly - e.g. the __main__ block
+    # below, or any future standalone script - not just from the live
+    # /api/upload path, which now passes its own request-scoped ID through
+    # ingest_document() (see ingestion/ingest_documents.py).
+    request_id = request_id or str(uuid.uuid4())
     endpoint = "/api/upload"
     request_start = time.perf_counter()
 
@@ -234,7 +241,8 @@ def extract_financial_metrics(
     llm_start = time.perf_counter()
     metrics, usage = get_structured_completion(
         prompt=prompt,
-        response_model=FinancialMetrics
+        response_model=FinancialMetrics,
+        request_id=request_id
     )
     llm_duration_ms = (time.perf_counter() - llm_start) * 1000
 

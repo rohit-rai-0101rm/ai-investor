@@ -133,15 +133,37 @@ One plumbing change had to happen first: `llm/azure_openai.py`'s `get_structured
 
 (The gap between `total` and `retrieval + llm_call` here is the embeddings model doing its one-time warm-up in this particular process — same phenomenon as Bug #1 above, not a new bug. It's a non-issue in the real upload flow since the singleton in `routes/chat.py` doesn't apply here — this path builds its own embeddings object in `routes/ingestion.py` once per upload, and uploads are infrequent/slow enough that this cost is not worth optimizing the way the chat path was.)
 
-## 6. What's still open right now
+## 6. Phase 2: tracing (structured logs tied together by request_id)
 
-Nothing left in the original Phase 1 checklist (latency + cost tracking on both endpoints). Everything below is Phase 2+ work, not started yet:
+Phase 1 gave us numbers in a database table. It didn't give us *logs* — if a request failed halfway through, there was no line anywhere saying what happened, just a gap in `request_metrics`. Phase 2 fixes that.
 
-1. Distributed tracing (Phase 2)
-2. Quality/regression eval harness (Phase 3)
-3. CI regression gating (Phase 4)
-4. Dashboard + writeup (Phase 5)
+**What we built**: `observability/logging_config.py` — a `JSONFormatter` that renders every log line as one JSON object, plus `configure_logging()` (called once, in `app.py`, at startup) and `get_logger(name)` (a thin wrapper every module uses instead of calling `logging` directly). Every log call now tags itself with `request_id` (and `endpoint`/`stage`/`company`/`year` where relevant) via Python logging's `extra={...}` parameter, so a JSON line looks like:
+```json
+{"timestamp": "...", "level": "INFO", "logger": "routes.chat", "message": "retrieval complete: 6 chunk(s)", "request_id": "8abd4e6a-...", "endpoint": "/api/chat", "stage": "retrieval", "company": "Apple", "year": 2024}
+```
 
-## 7. Where this sits in the overall 5-phase plan
+**Why this matters over plain `print()`**: before, every module (`routes/chat.py`, `routes/ingestion.py`, `ingestion/ingest_documents.py`, `rag/kpi_extractor_rag.py`, `llm/azure_openai.py`, `vectorstore/azure_ai_search.py`) printed plain text with no way to tell which lines belonged to the same request. Now every line for one request can be found with a single `grep` for its `request_id` — the same `request_id` that already ties together the `request_metrics` rows from Phase 1, so logs and DB metrics tell the same story instead of two disconnected ones.
 
-**Phase 1 (latency + cost tracking) is done** — both `/api/chat` and `/api/upload`'s KPI-extraction step are instrumented, and the 3 bugs the instrumentation surfaced (embeddings reinit, DB engine reinit, synchronous metric writes) are fixed and verified. Phases 2 (tracing), 3 (quality/eval harness), 4 (CI regression gating), and 5 (dashboard) haven't been started.
+**The one real design decision**: `/api/upload`'s `request_id` used to only exist deep inside `extract_financial_metrics()` (generated there, Phase 1). For tracing to actually work, it has to be generated at the *true* entry point — `routes/ingestion.py`'s `upload_document()` — and threaded down through `ingest_document()` → `upload_chunks()` / `extract_financial_metrics()` → `get_structured_completion()`. Made `request_id` an optional parameter everywhere on this path (defaulting to a fresh UUID if not passed), so standalone/CLI callers (`ingest_directory()`, the `__main__` blocks) keep working unchanged.
+
+**Verified for real**: ran the app locally, hit `/api/chat` and `/api/upload` (a real Apple PDF), then grepped the logs and queried Neon for each request's ID.
+
+`/api/chat` — one `request_id` (`8abd4e6a-...`) across 4 log lines: received → retrieval complete (6 chunks) → llm_call complete (1814+24 tokens, $0.000093) → total complete (7478ms).
+
+`/api/upload` — one `request_id` (`e33e3bcb-...`) across 5 log lines spanning 3 different modules: `routes.ingestion` (received) → `ingestion.ingest_documents` (ingesting, then chunked into 23 pieces) → `vectorstore.azure_ai_search` (23/23 chunks uploaded) → `routes.ingestion` (complete) — and the *same* ID appears in `request_metrics` for its retrieval/llm_call/total rows. This is exactly the thing Phase 2 set out to prove: pick one request_id, reconstruct its whole path from logs and DB alone, no guessing.
+
+**Error path is traced too**: both `routes/chat.py` and `routes/ingestion.py` now log a `request_id`-tagged error line (with full traceback via `exc_info=True`) before the exception propagates — previously a failed request just vanished after whichever stage crashed, with the 500 response as the only evidence.
+
+**Known side effect of this test run**: uploading `2024_Apple.pdf` again (to test the trace) added a second set of 23 chunks for Apple/2024 into the local Chroma collection, duplicating what was already there from earlier testing. Harmless for correctness (retrieval just returns some redundant chunks) but worth knowing — say the word if you want the local `data/chroma` collection deduplicated/rebuilt before this goes further.
+
+## 7. What's still open right now
+
+Phase 1 (latency + cost) and Phase 2 (tracing) are both done. Remaining:
+
+1. Quality/regression eval harness (Phase 3)
+2. CI regression gating (Phase 4)
+3. Dashboard + writeup (Phase 5)
+
+## 8. Where this sits in the overall 5-phase plan
+
+**Phase 1 (latency + cost tracking) and Phase 2 (tracing) are both done.** Phase 1: both `/api/chat` and `/api/upload`'s KPI-extraction step are instrumented, and the 3 bugs the instrumentation surfaced (embeddings reinit, DB engine reinit, synchronous metric writes) are fixed and verified. Phase 2: structured JSON logging tagged with `request_id` across every module on both live request paths, verified end-to-end on a real chat call and a real upload. Phases 3 (quality/eval harness), 4 (CI regression gating), and 5 (dashboard) haven't been started.

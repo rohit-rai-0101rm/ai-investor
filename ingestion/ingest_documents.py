@@ -5,6 +5,7 @@
 
 # ===== FREE ALTERNATIVE (local HuggingFace embeddings + Chroma) =====
 import os
+import uuid
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -17,7 +18,11 @@ from rag.kpi_extractor_rag import extract_financial_metrics
 from database.save_metrics import save_metrics
 from vectorstore.azure_ai_search import Retriever
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+from observability.logging_config import get_logger
+
 load_dotenv()
+logger = get_logger(__name__)
 
 
 def parse_company_year(pdf_file: Path) -> tuple[str, str]:
@@ -44,15 +49,25 @@ def parse_company_year(pdf_file: Path) -> tuple[str, str]:
 def ingest_document(
     pdf_path: str,
     embeddings,
-    vector_store
+    vector_store,
+    request_id: str | None = None
 ) -> None:
     """
     Ingest a single PDF document.
     """
+    # request_id defaults to a fresh one so CLI/standalone calls (ingest_directory()
+    # below, or the __main__ block) still work without a caller having to pass
+    # one - only routes/ingestion.py's live /api/upload path threads a real,
+    # request-scoped ID through here.
+    request_id = request_id or str(uuid.uuid4())
+
     pdf_file = Path(pdf_path)
 
     company, year = parse_company_year(pdf_file)
-    print(f"Ingesting {pdf_file.name} as company={company!r}, year={year!r}")
+    logger.info(
+        f"ingesting {pdf_file.name} as company={company!r}, year={year!r}",
+        extra={"request_id": request_id, "company": company, "year": year}
+    )
 
     converter = PDFToMarkdownConverter()
 
@@ -66,14 +81,18 @@ def ingest_document(
         embeddings=embeddings
     )
 
-    print(f"Generated {len(chunks)} chunks for {pdf_file.name}")
+    logger.info(
+        f"generated {len(chunks)} chunks for {pdf_file.name}",
+        extra={"request_id": request_id, "stage": "chunking", "company": company, "year": year}
+    )
 
     vector_store.upload_chunks(
-        chunks=chunks, 
+        chunks=chunks,
         embeddings=embeddings,
         company=company,
         year=year,
-        source_file=pdf_file.name
+        source_file=pdf_file.name,
+        request_id=request_id
     )
 
     # ===== OLD CODE (Azure AI Search retriever) =====
@@ -87,7 +106,8 @@ def ingest_document(
     metrics = extract_financial_metrics(
         retriever=Retriever(vector_store.collection, embeddings),
         company=company,
-        year=int(year) if year.isdigit() else None
+        year=int(year) if year.isdigit() else None,
+        request_id=request_id
     )
 
     # Persist metrics to PostgreSQL
@@ -125,7 +145,7 @@ def ingest_directory(input_dir: str) -> None:
 
     pdf_files = list(Path(input_dir).glob("*.pdf"))
 
-    print(f"Found {len(pdf_files)} PDF(s)")
+    logger.info(f"found {len(pdf_files)} PDF(s) in {input_dir}")
 
     for pdf_file in pdf_files:
         ingest_document(

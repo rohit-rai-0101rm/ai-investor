@@ -1,3 +1,3 @@
-"""Observability package: latency, cost, and (later) tracing/eval instrumentation."""
+"""Observability package: latency/cost metrics, structured logging/tracing, and (later) eval instrumentation."""
 
-__all__ = ["metrics"]
+__all__ = ["metrics", "logging_config"]

@@ -8,6 +8,11 @@ import re
 import json
 import openai
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+from observability.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # ===== OLD CODE (Azure OpenAI) =====
 # from openai import AzureOpenAI
@@ -42,7 +47,8 @@ def get_openai_client() -> OpenAI:
 def get_structured_completion(
     prompt: str,
     response_model: type[BaseModel],
-    model: str | None = None
+    model: str | None = None,
+    request_id: str | None = None
 ) -> tuple[BaseModel, object]:
     """
     Generate structured output.
@@ -51,6 +57,9 @@ def get_structured_completion(
         prompt: Input prompt.
         response_model: Pydantic response model.
         model: Groq model name.
+        request_id: Optional caller's request_id, tagged onto the debug log
+            below so the raw model output can be traced back to one request
+            (Phase 2 tracing) instead of just landing as an anonymous line.
 
     Returns:
         Tuple of (parsed response model, usage object with .prompt_tokens /
@@ -171,7 +180,7 @@ def get_structured_completion(
         )
 
     text = response.choices[0].message.content
-    print("[debug] Raw text response:\n", text)
+    logger.debug(f"raw text response: {text}", extra={"request_id": request_id})
 
     # Try to extract the first JSON object from the model output
     match = re.search(r"\{.*\}", text, re.S)

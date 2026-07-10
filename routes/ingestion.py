@@ -1,4 +1,5 @@
 import shutil
+import uuid
 from fastapi import APIRouter, File, UploadFile
 from pathlib import Path
 import os
@@ -12,13 +13,25 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from vectorstore.azure_ai_search import ChromaVectorStore
 from ingestion.ingest_documents import ingest_document
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+from observability.logging_config import get_logger
+
 router = APIRouter()
+logger = get_logger(__name__)
 
 
 @router.post("/upload")
 async def upload_document(
     file: UploadFile = File(...)
 ):
+    # Generated here, at the true entry point of this request, then threaded
+    # down through ingest_document() -> extract_financial_metrics() - so the
+    # PDF conversion/chunking/upload_chunks steps and the KPI-extraction
+    # stages recorded in Phase 1 all share one ID, the same way request_id
+    # ties every stage of one /api/chat call together.
+    request_id = str(uuid.uuid4())
+    endpoint = "/api/upload"
+
     upload_dir = Path("data/raw_pdfs")
     upload_dir.mkdir(
         parents=True,
@@ -26,6 +39,11 @@ async def upload_document(
     )
 
     file_path = upload_dir / file.filename
+
+    logger.info(
+        f"upload received: {file.filename}",
+        extra={"request_id": request_id, "endpoint": endpoint}
+    )
 
     # Pre-existing bug (from the original tutorial code, unrelated to the
     # Azure->free swap): ingestion used to run INSIDE this `with` block,
@@ -61,10 +79,27 @@ async def upload_document(
         collection_name=os.getenv("CHROMA_COLLECTION_NAME", "investor-intelligence")
     )
 
-    ingest_document(
-        pdf_path=str(file_path),
-        embeddings=embeddings,
-        vector_store=vector_store
+    try:
+        ingest_document(
+            pdf_path=str(file_path),
+            embeddings=embeddings,
+            vector_store=vector_store,
+            request_id=request_id
+        )
+    except Exception as e:
+        # Log with the request_id before letting the exception propagate -
+        # otherwise a failed upload's story just stops wherever it crashed,
+        # with no record tying the failure back to this specific request.
+        logger.error(
+            f"upload failed: {file.filename}: {e}",
+            extra={"request_id": request_id, "endpoint": endpoint},
+            exc_info=True
+        )
+        raise
+
+    logger.info(
+        f"upload complete: {file.filename}",
+        extra={"request_id": request_id, "endpoint": endpoint}
     )
 
     return {

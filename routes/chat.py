@@ -15,7 +15,11 @@ from llm.azure_openai import get_openai_client
 # ===== MONITORING & OBSERVABILITY (Phase 1: latency + cost tracking) =====
 from observability.metrics import time_stage, record_metric, estimate_cost_usd
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+from observability.logging_config import get_logger
+
 router = APIRouter()
+logger = get_logger(__name__)
 
 class ChatRequest(BaseModel):
     question: str
@@ -61,6 +65,11 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
     endpoint = "/api/chat"
     request_start = time.perf_counter()
 
+    logger.info(
+        "chat request received",
+        extra={"request_id": request_id, "endpoint": endpoint, "company": request.company, "year": request.year}
+    )
+
     try:
         # ===== OLD CODE (Azure AI Search) =====
         # vector_store = AzureAISearchVectorStore(
@@ -100,6 +109,11 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         max_chars_per_chunk = 1200
         context = "\n\n".join(doc.page_content[:max_chars_per_chunk] for doc in docs)
+
+        logger.info(
+            f"retrieval complete: {len(docs)} chunk(s)",
+            extra={"request_id": request_id, "endpoint": endpoint, "stage": "retrieval", "company": request.company, "year": request.year}
+        )
 
         # Build chat prompt – include retrieved context and the user question
         # Explicit "no outside knowledge" instruction: smaller free models will
@@ -156,6 +170,11 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
         usage = response.usage
         cost_usd = estimate_cost_usd(model, usage.prompt_tokens, usage.completion_tokens)
 
+        logger.info(
+            f"llm_call complete: {usage.prompt_tokens}+{usage.completion_tokens} tokens, ${cost_usd:.6f}",
+            extra={"request_id": request_id, "endpoint": endpoint, "stage": "llm_call", "company": request.company, "year": request.year}
+        )
+
         # Scheduled via background_tasks (not called directly) for the same
         # reason as the time_stage() calls above: each record_metric() write
         # is a real Postgres round-trip (~850ms) - deferring it until after
@@ -175,16 +194,32 @@ async def chat(request: ChatRequest, background_tasks: BackgroundTasks):
 
         answer = response.choices[0].message.content
 
+        total_duration_ms = (time.perf_counter() - request_start) * 1000
+
         background_tasks.add_task(
             record_metric,
             request_id=request_id,
             endpoint=endpoint,
             stage="total",
-            duration_ms=(time.perf_counter() - request_start) * 1000,
+            duration_ms=total_duration_ms,
             company=request.company,
             year=request.year
         )
 
+        logger.info(
+            f"chat request complete in {total_duration_ms:.0f}ms",
+            extra={"request_id": request_id, "endpoint": endpoint, "stage": "total", "company": request.company, "year": request.year}
+        )
+
         return {"answer": answer}
     except Exception as e:
+        # exc_info=True: a request_id-tagged line for the failure itself, not
+        # just the generic 500 the client sees - without this, a failed
+        # request_id has metrics/logs up to whichever stage crashed and then
+        # just stops, with no record of why.
+        logger.error(
+            f"chat request failed: {e}",
+            extra={"request_id": request_id, "endpoint": endpoint, "company": request.company, "year": request.year},
+            exc_info=True
+        )
         raise HTTPException(status_code=500, detail=str(e))

@@ -5,6 +5,11 @@ from types import SimpleNamespace
 
 import chromadb
 
+# ===== MONITORING & OBSERVABILITY (Phase 2: tracing) =====
+from observability.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 # ===== OLD CODE (Azure AI Search) =====
 # from azure.core.credentials import AzureKeyCredential
@@ -121,7 +126,8 @@ class ChromaVectorStore:
         embeddings,
         company: str,
         year: str,
-        source_file: str
+        source_file: str,
+        request_id: str | None = None
     ) -> None:
         """
         Upload chunks to ChromaDB.
@@ -152,7 +158,10 @@ class ChromaVectorStore:
             metadatas=metadatas
         )
 
-        print(f"Uploaded {len(documents)}/{len(documents)} chunks.")
+        logger.info(
+            f"uploaded {len(documents)}/{len(documents)} chunks",
+            extra={"request_id": request_id, "stage": "upload_chunks", "company": company, "year": year}
+        )
 
 
 class Retriever:
